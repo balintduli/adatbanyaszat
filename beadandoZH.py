@@ -6,6 +6,9 @@ import dash_bootstrap_components as dbc
 from dash.dependencies import Output, Input
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
+import numpy as np
+from sklearn.linear_model import LinearRegression
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
@@ -21,6 +24,8 @@ population_max = data_2015['Population'].max()
 gdp_min = data_2015['GDP'].min()
 gdp_max = data_2015['GDP'].max()
 countries = data['Country'].unique()
+years=data['Year'].unique()
+filtered_data_reg = data.dropna(subset=['GDP', 'Life expectancy '])
 
 keszito_adatai_markdown = '''
 ### Készítő adatai
@@ -130,21 +135,20 @@ app.layout = html.Div([
 
     html.Div([
         html.H4("Várható élettartam alakulása évenként a választott országokban", style={'textAlign': 'left'}),
-    ], style={'padding': '0 0px', 'marginBottom': '20px'}),
-    html.P("Válassz egy vagy több országot!"),
-
-    html.Div([
+        html.P("Válassz egy vagy több országot!"),
+html.Div([
         dcc.Dropdown(
             id='country-dropdown-multiple',
             options=[{'label': country, 'value': country} for country in countries],
-            multi=True,  # Allow multiple selections
-            value=[countries[0]],  # Default to the first country
+            multi=True,
+            value=[countries[0]],
             clearable=False,
-            style={'width': '250px'}
+            style={'width': '500px'}
         ),
     ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'}),
 
-    dcc.Graph(id='life-expectancy-graph'),
+    dcc.Graph(id='life-expectancy-graph')
+    ], style={'padding': '20px', 'marginBottom': '20px'}),
 
     html.Hr(),
 
@@ -161,7 +165,6 @@ app.layout = html.Div([
                     value=[data['Year'].min(), data['Year'].max()],
                     marks={year: str(year) for year in range(data['Year'].min(), data['Year'].max() + 1, 1)},
                     tooltip={"placement": "bottom", "always_visible": True},
-                    # Removed style here
                 ),
                 style={'width': '50%', 'marginRight':'40px'}
             ),
@@ -208,10 +211,6 @@ app.layout = html.Div([
             )
         ], style={'width': '50%', 'marginTop': '20px', 'align': 'center'}),
 
-
-
-
-
         dcc.Graph(id='frequency-graph')
     ], style={'padding': '20px'}),
 
@@ -249,6 +248,52 @@ html.Div([
     ),
     dcc.Graph(id='choropleth-map')
 ], style={'padding': '20px'}),
+
+    html.Hr(),
+
+     html.Div([
+         html.H4("Várható élettartam alakulása az egy főre jutó GDP szerint egy választott évben", style={'textAlign': 'left'}),
+        html.P("Válassz évet a legördülő listából!"),
+        dcc.Dropdown(
+            id='year-dropdown',
+            options=[{'label': str(year), 'value': year} for year in years],
+            value=years[0],
+            clearable=False,
+            style={
+            'height': '30px',
+            'width': '200px',
+            'margin': '10px 0 20px 0'
+        }
+        ),
+
+         html.P("Válassz regressziós modellt:"),
+         dcc.Dropdown(
+             id='regression-model-dropdown',
+             options=[
+                 {'label': 'Lineáris', 'value': 'linear'},
+                 {'label': 'Polinomiális', 'value': 'polynomial'}
+             ],
+             value='linear',
+             style={
+                 'height': '30px',
+                 'width': '200px',
+                 'margin': '10px 0 20px 0'
+             }
+         ),
+
+         html.P("Polinomiális fok (csak polinomiális regresszióhoz):"),
+         dcc.Input(
+             id='polynomial-degree-input',
+             type='number',
+             value=2,
+             min=2,
+             max=10,
+             style={'width': '100px'}
+         ),
+
+
+        dcc.Graph(id='life-expectancy-gdp-graph')
+    ], style={'padding': '20px'}),
 
     html.Hr(),
 
@@ -484,6 +529,74 @@ def update_choropleth(selected_variable):
     )
 
     return fig
+
+
+# Callback 8.feladat
+@app.callback(
+    Output('life-expectancy-gdp-graph', 'figure'),
+    [
+        Input('year-dropdown', 'value'),
+        Input('regression-model-dropdown', 'value'),
+        Input('polynomial-degree-input', 'value')
+    ]
+)
+def update_graph(selected_year, selected_model, polynomial_degree):
+    filtered_data = filtered_data_reg[filtered_data_reg['Year'] == selected_year]
+
+    x = filtered_data['GDP']
+    y = filtered_data['Life expectancy ']
+
+    figure = go.Figure()
+    figure.add_trace(go.Scatter(
+        x=x,
+        y=y,
+        mode='markers',
+        marker=dict(size=10, color='blue'),
+        name=f'Year: {selected_year}'
+    ))
+    if selected_model == 'linear':
+        # Lineáris regresszió
+        x_reshaped = x.values.reshape(-1, 1)
+        model = LinearRegression()
+        model.fit(x_reshaped, y)
+        y_pred = model.predict(x_reshaped)
+        figure.add_trace(go.Scatter(
+            x=x,
+            y=y_pred,
+            mode='lines',
+            line=dict(color='red', width=2),
+            name='Lineáris modell'
+        ))
+
+    elif selected_model == 'polynomial':
+        if polynomial_degree is None or polynomial_degree < 1:
+            polynomial_degree = 2
+        coeffs = np.polyfit(x, y, deg=polynomial_degree)
+        poly_eq = np.poly1d(coeffs)
+
+        x_pred = np.linspace(x.min(), x.max(), 100)
+        y_pred = poly_eq(x_pred)
+
+        figure.add_trace(go.Scatter(
+            x=x_pred,
+            y=y_pred,
+            mode='lines',
+            line=dict(color='red', width=2),
+            name=f'{polynomial_degree}. fokú polinomiális modell'
+        ))
+
+    figure.update_layout(
+        title=f'Várható élettartam és GDP az évben {selected_year}',
+        xaxis_title='GDP',
+        yaxis_title='Várható élettartam',
+        hovermode='closest',
+        paper_bgcolor='#E9F0C9',
+        plot_bgcolor='rgba(255, 255, 255, 0.6)',
+        xaxis=dict(gridcolor='black', zerolinecolor='black'),
+        yaxis=dict(gridcolor='black', zerolinecolor='black')
+    )
+
+    return figure
 
 if __name__ == '__main__':
     app.run_server(debug=True)
