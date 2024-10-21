@@ -13,7 +13,7 @@ from sklearn.linear_model import LinearRegression
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-data = pd.read_csv(os.path.join(current_dir, '../3_varhato_elettartam.csv'))
+data = pd.read_csv(os.path.join(current_dir, '3_varhato_elettartam.csv'))
 
 noempty_data = data.dropna()
 data['Year'] = data['Year'].astype(int)
